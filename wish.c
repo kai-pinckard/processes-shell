@@ -30,31 +30,48 @@ int main()
 {
     pid_t child;
     char cmd[20];
-    char* args[20][20];
+    char* args[20];
 
     fgets(cmd, 20, stdin);
     printf("%s", cmd);
-    args[0] = strtok(cmd, " ");
-    int i = 1;
-    while(val != NULL)
+    int i = 0;
+    args[i] = strtok(cmd, " \n");
+    while(args[i] != NULL)
     {
-        printf("%s\n", val);
-        args[] = strtok(NULL, " ");
+        printf("%s\n", args[i]);
         i += 1;
+        args[i] = strtok(NULL, " \n");
     }
     
+
+    /* for(int j = 0; j <= i ; j++)
+    {
+        printf("arg %d: %s\n", j, args[j]);
+    } */
+
     child = fork();
 
     if(child != 0)
     {
         // This is not the child
-        printf("%d\n", child);
+        printf("parent here: %d\n", child);
     }
     else
     {
         // This is the child
         printf("child here\n");
         //run execv
+
+        //there may be an extra \n in the last argument
+        for(int j = 0; j <= i ; j++)
+        {
+            printf("arg %d: %s\n", j, args[j]);
+        } 
+
+        printf("child calling execv");
+
+        // previously &(args[1])
+        int status = execv(args[0], args);
     }
 
     return 0;
