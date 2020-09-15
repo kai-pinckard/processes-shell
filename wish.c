@@ -2,6 +2,8 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/wait.h>
+#include <stdbool.h>
 
 /*
 This function will return the first sub command in the string
@@ -32,46 +34,58 @@ int main()
     char cmd[20];
     char* args[20];
 
-    fgets(cmd, 20, stdin);
-    printf("%s", cmd);
-    int i = 0;
-    args[i] = strtok(cmd, " \n");
-    while(args[i] != NULL)
+    while(true)
     {
-        printf("%s\n", args[i]);
-        i += 1;
-        args[i] = strtok(NULL, " \n");
-    }
-    
+        printf("wish> ");
+        fgets(cmd, 20, stdin);
+        int i = 0;
+        args[i] = strtok(cmd, " \n");
+        while(args[i] != NULL)
+        {
+            /* printf("%s\n", args[i]); */
+            i += 1;
+            args[i] = strtok(NULL, " \n");
+        }
+        
 
-    /* for(int j = 0; j <= i ; j++)
-    {
-        printf("arg %d: %s\n", j, args[j]);
-    } */
-
-    child = fork();
-
-    if(child != 0)
-    {
-        // This is not the child
-        printf("parent here: %d\n", child);
-    }
-    else
-    {
-        // This is the child
-        printf("child here\n");
-        //run execv
-
-        //there may be an extra \n in the last argument
-        for(int j = 0; j <= i ; j++)
+        /* for(int j = 0; j <= i ; j++)
         {
             printf("arg %d: %s\n", j, args[j]);
-        } 
+        } */
 
-        printf("child calling execv");
 
-        // previously &(args[1])
-        int status = execv(args[0], args);
+        child = fork();
+
+        if(child != 0)
+        {
+            // This is not the child
+            int wstatus = -1;
+            if(waitpid(child, &wstatus, 0) == -1)
+            {
+                printf("waitpid failed.\n");
+            }
+            printf("wstatus: %d\n", wstatus);
+            printf("parent here: %d\n", child);
+        }
+        else
+        {
+            // This is the child
+            printf("child here\n");
+            //run execv
+
+            /* //there may be an extra \n in the last argument
+            for(int j = 0; j <= i ; j++)
+            {
+                printf("arg %d: %s\n", j, args[j]);
+            } 
+            */
+            printf("child calling execv\n");
+
+            // previously &(args[1])
+            int status = execv(args[0], args);
+            printf("unexpected return execv error occured.\n");
+        }
+
     }
 
     return 0;
