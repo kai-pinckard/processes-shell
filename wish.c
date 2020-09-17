@@ -6,6 +6,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+
+// This is a space delimited list of directories.
+char path[1024] = "/bin/ /usr/bin/";
 /*
 This function takes a line that has been read with getline and
 parses it into its tokens. An array of char arrays is returned with
@@ -30,10 +33,15 @@ char** parse_line()
     // need to free memory allocated by getline
     getline(&line_buffer, &buffer_size, stdin);
 
-    printf("%s\n", line_buffer);
-
     int i = 0;
     args[0] = strtok(line_buffer, " \n");
+
+    if(args[0] == NULL)
+    {
+        //printf("error invalid input empty");
+        return NULL;
+    }
+
     while(args[i] != NULL)
     {
         //printf("setting %s\n", args[i]); 
@@ -58,6 +66,33 @@ char** parse_line()
     // and or maybe free each indivudual pointer in args by looping through
     printf("returned\n");
     return args;
+}
+/*
+    This function is responsible for seeing if an executable exists in the directories
+    specified by path that corresponds to the entered arguments.
+*/
+void search_for_program(char** args)
+{
+    char* directory = strtok(path, " ");
+
+    while(directory != NULL)
+    {
+        // concat the directory with args[0]
+        int file_path_length = strlen(directory) + strlen(args[0]) + 1;
+        char file_path[file_path_length];
+        strncpy(file_path, directory, file_path_length);
+        strcat(file_path, args[0]);
+
+        if (access(file_path, X_OK) == 0)
+        {
+            printf("program found at %s\n", file_path);
+            return;
+        }
+
+        directory = strtok(NULL, " ");
+    }
+    printf("error no program found.\n");
+
 }
 
 void handle_command(char** args)
@@ -86,41 +121,56 @@ void handle_command(char** args)
         printf("not built in cmd\n");
         printf("WIP --- attempting to execute command.\n");
 
-        pid_t child;
-        child = fork();
+        search_for_program(args);
 
-        if(child != 0)
+        char* directory = strtok(path, " ");
+
+        while(directory != NULL)
         {
-            // This is not the child
-            int wstatus = -1;
-            if(waitpid(child, &wstatus, 0) == -1)
+            // concat the directory with args[0]
+            int file_path_length = strlen(directory) + strlen(args[0]) + 1;
+            char file_path[file_path_length];
+            strncpy(file_path, directory, file_path_length);
+            strcat(file_path, args[0]);
+
+            if (access(file_path, X_OK) == 0)
             {
-                printf("waitpid failed.\n");
+                // a valid executable has been found
+                printf("attempting running program at %s\n", file_path);
+
+                pid_t child;
+                child = fork();
+
+                if(child != 0)
+                {
+                    // This is not the child
+                    int wstatus = -1;
+                    if(waitpid(child, &wstatus, 0) == -1)
+                    {
+                        printf("waitpid failed.\n");
+                    }
+                    printf("wstatus: %d\n", wstatus);
+                    printf("parent here: %d\n", child);
+                    return;
+                }
+                else
+                {
+                    printf("child calling execv\n");
+
+                    // need to be able to prepend to 
+                    execv(file_path, args);
+                    printf("unexpected return execv error occured.\n");
+                    exit(1);
+                }
+
+
             }
-            printf("wstatus: %d\n", wstatus);
-            printf("parent here: %d\n", child);
-        }
-        else
-        {
-            // This is the child
-            printf("child here\n");
-            //run execv
 
-            /* //there may be an extra \n in the last argument
-            for(int j = 0; j <= i ; j++)
-            {
-                printf("arg %d: %s\n", j, args[j]);
-            } 
-            */
-            printf("child calling execv\n");
-
-            // previously &(args[1])
-            execv(args[0], args);
-            printf("unexpected return execv error occured.\n");
-            exit(1);
+            directory = strtok(NULL, " ");
         }
     }
 }
+
 
 
 void print_args(char** args)
@@ -135,24 +185,30 @@ void print_args(char** args)
 }
 
 
-
 int main(int argc, char* argv[])
 {
     char** args;
     // update this to also include user bin
     //char path[256] = "/bin/";
 
+
+
+    // TODO add path
+    // and start building against the unit tests
     if(argc < 2)
     {
-        printf("less than two args.\n");
-        printf("interactive mode: \n");
+        //printf("less than two args.\n");
+        //printf("interactive mode: \n");
 
         while(true)
         {
             printf("wish> ");
             args = parse_line();
-            print_args(args);
-            handle_command(args);
+            if(args != NULL)
+            {
+                print_args(args);
+                handle_command(args);
+            }
         }
 
 
