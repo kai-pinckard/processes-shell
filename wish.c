@@ -8,7 +8,9 @@
 
 
 // This is a space delimited list of directories.
-char path[1024] = "/bin/ /usr/bin/";
+const int MAX_PATH_SIZE = 4096;
+char path[4096] = "/bidn/ /usr/bin/";
+
 /*
 This function takes a line that has been read with getline and
 parses it into its tokens. An array of char arrays is returned with
@@ -67,13 +69,23 @@ char** parse_line()
     printf("returned\n");
     return args;
 }
+
+
 /*
     This function is responsible for seeing if an executable exists in the directories
     specified by path that corresponds to the entered arguments.
 */
 void search_for_program(char** args)
 {
-    char* directory = strtok(path, " ");
+
+
+    // create a modifiable copy of path
+    int path_len = strlen(path) + 1;
+    char path_cp[path_len];
+    strncpy(path_cp, path, path_len);
+
+
+    char* directory = strtok(path_cp, " ");
 
     while(directory != NULL)
     {
@@ -93,6 +105,20 @@ void search_for_program(char** args)
     }
     printf("error no program found.\n");
 
+}
+
+
+void handle_path(char** args)
+{
+    // set the first byte to \0 so that concats can be used
+    bzero(path, 1);
+    for(int i = 1; args[i] != NULL; i++)
+    {
+        printf("%s\n", args[i]);
+        strcat(path, args[i]);
+        strcat(path, " ");
+        //free(args[i]);
+    }
 }
 
 void handle_command(char** args)
@@ -115,24 +141,33 @@ void handle_command(char** args)
     else if(strcmp(args[0], "path") == 0)
     {
         printf("builtin path called:\n");
+        handle_path(args);
     }
     else
     {
         printf("not built in cmd\n");
         printf("WIP --- attempting to execute command.\n");
 
-        search_for_program(args);
+        //search_for_program(args);
 
-        char* directory = strtok(path, " ");
+
+        // create a modifiable copy of path
+        int path_len = strlen(path) + 1;
+        char path_cp[path_len];
+        strncpy(path_cp, path, path_len);
+
+        char* directory = strtok(path_cp, " ");
 
         while(directory != NULL)
         {
             // concat the directory with args[0]
+            printf("direct: %s\n", directory);
             int file_path_length = strlen(directory) + strlen(args[0]) + 1;
             char file_path[file_path_length];
             strncpy(file_path, directory, file_path_length);
             strcat(file_path, args[0]);
 
+            printf("filepath: %s\n", file_path);
             if (access(file_path, X_OK) == 0)
             {
                 // a valid executable has been found
@@ -188,12 +223,7 @@ void print_args(char** args)
 int main(int argc, char* argv[])
 {
     char** args;
-    // update this to also include user bin
-    //char path[256] = "/bin/";
 
-
-
-    // TODO add path
     // and start building against the unit tests
     if(argc < 2)
     {
