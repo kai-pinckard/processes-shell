@@ -2,6 +2,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -11,12 +12,33 @@
 const int MAX_PATH_SIZE = 4096;
 char path[4096] = "/bidn/ /usr/bin/";
 
+
+void set_args_to_null(char** args, int start_index)
+{
+    for(int i = start_index; args[i] != NULL; i++)
+    {
+        args[i] = NULL;
+    }
+    return;
+}
+
+void print_args(char** args)
+{
+    printf("------------Printing---------------\n");
+    for(int i = 0; args[i] != NULL; i++)
+    {
+        printf("%s\n", args[i]);
+        //free(args[i]);
+    }
+    printf("------------end printing------------\n\n");
+}
+
 /*
 This function takes a line that has been read with getline and
 parses it into its tokens. An array of char arrays is returned with
 the length of each sub array being the length of the longest argument.
 */
-char** parse_line()
+char** parse_line(FILE* input_file)
 {
     int MAX_ARGS = 100;
     // getline vars
@@ -33,7 +55,11 @@ char** parse_line()
     }
 
     // need to free memory allocated by getline
-    getline(&line_buffer, &buffer_size, stdin);
+    if (getline(&line_buffer, &buffer_size, input_file) == -1)
+    {
+        printf("end of file reached\n");
+        exit(0);
+    }
 
     int i = 0;
     args[0] = strtok(line_buffer, " \n");
@@ -121,6 +147,23 @@ void handle_path(char** args)
     }
 }
 
+void handle_cd(char** args)
+{
+    if(args[0] != NULL && args[1] != NULL && args[2] == NULL)
+    {
+        print_args(args);
+        if(chdir(args[1]) != 0)
+        {
+            perror("error invalid path not able to cd.");
+        }
+    }
+    else
+    {
+        perror("invalid number of arguments for cd\n");
+        return;
+    }
+}
+
 void handle_command(char** args)
 {
     if(args[0] == 0)
@@ -137,6 +180,7 @@ void handle_command(char** args)
     else if(strcmp(args[0], "cd") == 0)
     {
         printf("builtin cd called:\n");
+        handle_cd(args);
     }
     else if(strcmp(args[0], "path") == 0)
     {
@@ -149,7 +193,6 @@ void handle_command(char** args)
         printf("WIP --- attempting to execute command.\n");
 
         //search_for_program(args);
-
 
         // create a modifiable copy of path
         int path_len = strlen(path) + 1;
@@ -192,6 +235,37 @@ void handle_command(char** args)
                 {
                     printf("child calling execv\n");
 
+                    // check if redirection is present
+                    int redirection_file = -1;
+
+                    for(int i = 0; args[i] != NULL; i++)
+                    {
+                        printf("%s\n", args[i]);
+                        // this requires a space which is a problem.
+                        if(strcmp(args[i], ">") == 0)
+                        {
+                            printf("attempting redirection occured\n");
+                            if(args[i+1] != NULL && args[i+2] == NULL)
+                            {
+                                printf("redirection occuring\n");
+                                redirection_file = open(args[i+1], O_CREAT|O_TRUNC|O_WRONLY, 0666);
+                                if (redirection_file < 0)
+                                {
+                                    perror("unable to open redirection file\n");
+                                    return;
+                                }
+                                // remove all args after and including >
+                                set_args_to_null(args, i);
+                            }
+                            break;
+                        }
+                    }
+
+                    // configure output and error redirection
+                    dup2(redirection_file, 1);
+                    dup2(redirection_file, 2);
+
+
                     // need to be able to prepend to 
                     execv(file_path, args);
                     printf("unexpected return execv error occured.\n");
@@ -204,19 +278,6 @@ void handle_command(char** args)
             directory = strtok(NULL, " ");
         }
     }
-}
-
-
-
-void print_args(char** args)
-{
-    printf("------------Printing---------------\n");
-    for(int i = 0; args[i] != NULL; i++)
-    {
-        printf("%s\n", args[i]);
-        //free(args[i]);
-    }
-    printf("------------end printing------------\n\n");
 }
 
 
@@ -233,7 +294,7 @@ int main(int argc, char* argv[])
         while(true)
         {
             printf("wish> ");
-            args = parse_line();
+            args = parse_line(stdin);
             if(args != NULL)
             {
                 print_args(args);
@@ -241,12 +302,23 @@ int main(int argc, char* argv[])
             }
         }
 
-
     }
     else
     {
         printf("more than two args.\n");
         printf("running from file %s\n", argv[1]);
+        FILE *fp = fopen(argv[1], "r");
+
+        while(true)
+        {
+            printf("wish> ");
+            args = parse_line(fp);
+            if(args != NULL)
+            {
+                print_args(args);
+                handle_command(args);
+            }
+        }
     }
 
     //free(args);
