@@ -36,6 +36,51 @@ void set_args_to_null(char** args, int start_index)
     return;
 }
 
+/*
+This function searches for > and &s and inserts a space before and
+after them for easier parsing.
+*/
+char* preprocess_line(char* line)
+{
+    //printf("%s\n", line);
+    int extra_spaces = 0; 
+    for(int i = 0; i < strlen(line); i++)
+    {
+        if(line[i] == '>' || line[i] ==  '&')
+        {
+            extra_spaces += 2;
+        }
+    }
+
+    char* line_cp = (char*) calloc(strlen(line) + extra_spaces + 1, sizeof(char));
+    line_cp[0] = '\0';
+
+    int line_cp_pos = 0;
+    for(int i = 0; i < strlen(line); i++)
+    {
+        if(line[i] == '>' || line[i] ==  '&')
+        {
+            line_cp[line_cp_pos] = ' ';
+            line_cp_pos += 1;
+            line_cp[line_cp_pos] = line[i];
+            line_cp_pos += 1;
+            line_cp[line_cp_pos] = ' ';
+            line_cp_pos += 1;
+        }
+        else
+        {
+            line_cp[line_cp_pos] = line[i];
+            line_cp_pos += 1;
+        }
+    }
+    //printf("line %s\n", line);
+    //printf("linecp %s\n", line_cp);
+    free(line);
+    return line_cp;
+
+    //free(line);
+}
+
 void print_args(char** args)
 {
     //printf("------------Printing---------------\n");
@@ -69,16 +114,23 @@ char** parse_line(FILE* input_file)
         exit(1);
     }
 
+    int chars_read = -1;
     // need to free memory allocated by getline
-    if (getline(&line_buffer, &buffer_size, input_file) == -1)
+    if ((chars_read = getline(&line_buffer, &buffer_size, input_file)) == -1)
     {
         //printf("end of file reached\n");
         //generic_error();
         exit(0);
     }
+    if(chars_read == 0)
+    {
+        //printf("ran\n");
+        exit(1);
+    }
 
+    line_buffer = preprocess_line(line_buffer);
     int i = 0;
-    args[0] = strtok(line_buffer, " \n");
+    args[0] = strtok(line_buffer, " \n\t");
 
     if(args[0] == NULL)
     {
@@ -99,7 +151,7 @@ char** parse_line(FILE* input_file)
             exit(1);
         }
 
-        args[i] = strtok(NULL, " \n");
+        args[i] = strtok(NULL, " \n\t");
     }
     return args;
 }
@@ -180,6 +232,10 @@ void handle_command(char** args)
         // check that this is the right error message
         //printf("error uninitialized");
         generic_error();
+    }
+    else if(strcmp(args[0], "&") == 0)
+    {
+        return;
     }
 
     if(strcmp(args[0], "exit") == 0)
@@ -289,7 +345,7 @@ void handle_command(char** args)
                         //The argument contains a >
                         else if((redirect_char_loc = strchr(args[i], '>')) != NULL)
                         {
-                            printf("here");
+                            //printf("here");
                             if(redirect_char_loc[1] != '\0')
                             {
                                 redirection_file = open((redirect_char_loc+1), O_CREAT|O_TRUNC|O_WRONLY, 0666);
@@ -303,7 +359,7 @@ void handle_command(char** args)
                                 set_args_to_null(args, i);
                                 // terminate string at redirect char
                                 *redirect_char_loc = '\0';
-                                printf("%s\n", args[i]);
+                                //printf("%s\n", args[i]);
                             }
                             else
                             {
@@ -366,11 +422,29 @@ int main(int argc, char* argv[])
         //printf("more than two args.\n");
         //printf("running from file %s\n", argv[1]);
         FILE *fp = fopen(argv[1], "r");
-
-        while((args = parse_line(fp)) != NULL)
+        //printf("her3e");
+        if(fp == NULL)
         {
+            //printf("here");
+            generic_error();
+            exit(1);
+        }
+        if(fgetc(fp) == 0 || argc > 2)
+        {
+            generic_error();
+            exit(1);
+        } 
+        rewind(fp);
+
+        while(true)
+        {
+            //printf("dsfsd\n");
+            args = parse_line(fp);
             //print_args(args);
-            handle_command(args);
+            if(args != NULL)
+            {
+                handle_command(args);
+            }
         }
     }
 
