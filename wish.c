@@ -6,12 +6,12 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <limits.h>
 //include linux limits
 
 
 // This is a space delimited list of directories.
-const int MAX_PATH_SIZE = 4096;
-char path[4096] = "/bin /usr/bin";
+char path[_POSIX_PATH_MAX] = "/bin /usr/bin";
 char error_message[30] = "An error has occurred\n";
 
 /*
@@ -39,13 +39,13 @@ void set_args_to_null(char** args, int start_index)
 
 /*
 This function searches for > and &s and inserts a space before and
-after them for easier parsing.
+after them for easier parsing. allocates memory 
 */
 char* preprocess_line(char* line)
 {
     //printf("%s\n", line);
     int extra_spaces = 0; 
-    for(int i = 0; i < strlen(line); i++)
+    for(size_t i = 0; i < strlen(line); i++)
     {
         if(line[i] == '>' || line[i] ==  '&')
         {
@@ -57,7 +57,7 @@ char* preprocess_line(char* line)
     line_cp[0] = '\0';
 
     int line_cp_pos = 0;
-    for(int i = 0; i < strlen(line); i++)
+    for(size_t i = 0; i < strlen(line); i++)
     {
         if(line[i] == '>' || line[i] ==  '&')
         {
@@ -79,18 +79,7 @@ char* preprocess_line(char* line)
     free(line);
     return line_cp;
 
-    //free(line);
-}
-
-void print_args(char** args)
-{
-    //printf("------------Printing---------------\n");
-    for(int i = 0; args[i] != NULL; i++)
-    {
-        //printf("%s\n", args[i]);
-        //free(args[i]);
-    }
-    //printf("------------end printing------------\n\n");
+    ////free(line);
 }
 
 /*
@@ -98,15 +87,14 @@ This function takes a line that has been read with getline and
 parses it into its tokens. An array of char arrays is returned with
 the length of each sub array being the length of the longest argument.
 */
-char** parse_line(FILE* input_file)
+char** parse_line(FILE* input_file, char** line_buffer_ptr)
 {
-    int MAX_ARGS = 100;
     // getline vars
     char* line_buffer = NULL;
     size_t buffer_size = 0;
 
     // array of args
-    char** args = (char**) calloc(MAX_ARGS, sizeof(char*));
+    char** args = (char**) calloc(_POSIX_ARG_MAX, sizeof(char*));
 
     if(args == NULL)
     {
@@ -116,7 +104,7 @@ char** parse_line(FILE* input_file)
     }
 
     int chars_read = -1;
-    // need to free memory allocated by getline
+    // need to //free memory allocated by getline
     if ((chars_read = getline(&line_buffer, &buffer_size, input_file)) == -1)
     {
         //printf("end of file reached\n");
@@ -130,6 +118,7 @@ char** parse_line(FILE* input_file)
     }
 
     line_buffer = preprocess_line(line_buffer);
+    *line_buffer_ptr = line_buffer;
     int i = 0;
     args[0] = strtok(line_buffer, " \n\t");
 
@@ -145,15 +134,16 @@ char** parse_line(FILE* input_file)
         //printf("setting %s\n", args[i]);
         i += 1;
 
-        if(i > MAX_ARGS)
+        /* if(i > _POSIX_ARG_MAX)
         {
-            //printf("Too many arguments in line. (limit %d)\n", MAX_ARGS);
+            //printf("Too many arguments in line. (limit %d)\n", _POSIX_ARG_MAX);
             generic_error();
             exit(1);
-        }
+        } */
 
         args[i] = strtok(NULL, " \n\t");
     }
+    //free(line_buffer);
     return args;
 }
 
@@ -166,7 +156,7 @@ void handle_path(char** args)
         //printf("%s\n", args[i]);
         strcat(path, args[i]);
         strcat(path, " ");
-        //free(args[i]);
+        ////free(args[i]);
     }
 }
 
@@ -199,7 +189,7 @@ void handle_cd(char** args)
 */
 char** get_next_command(char** args, char*** next)
 {
-    //possibly need to free somewhere.
+    //possibly need to //free somewhere.
     //printf("called now\n");
     *next = NULL;
     for(int i = 0; args[i] != NULL; i++)
@@ -362,30 +352,30 @@ void handle_external_command(char** args)
     }
 }
 
-
-
-
-void handle_command(char** args)
+/*
+returns a bool if true the program will exit after function call in main.
+*/
+bool handle_command(char** args)
 {
     if(args[0] == 0)
     {
         // check that this is the right error message
         //printf("error uninitialized");
         generic_error();
+        return false;
     }
     else if(strcmp(args[0], "&") == 0)
     {
-        return;
+        return false;
     }
 
     if(strcmp(args[0], "exit") == 0)
     {
-        //printf("builtin exit called:\n");
         if(args[1] != NULL)
         {
             generic_error();
         }
-        exit(0);
+        return true;
     }
     else if(strcmp(args[0], "cd") == 0)
     {
@@ -405,6 +395,7 @@ void handle_command(char** args)
         //search_for_program(args);
         handle_external_command(args);
     }
+    return false;
 }
 
 /*
@@ -426,12 +417,14 @@ Need something like start all commands then wait for commands to finish.
 
 int main(int argc, char* argv[])
 {
-    char** args;
+    char** initial_args;
     FILE *fp = fdopen(0, "r");
+    char* line_buffer = NULL;
     if(argc > 1)
     {
         //printf("more than two args.\n");
         //printf("running from file %s\n", argv[1]);
+        fclose(fp);
         fp = fopen(argv[1], "r");
         //printf("her3e");
         if(fp == NULL)
@@ -450,27 +443,39 @@ int main(int argc, char* argv[])
     while(true)
     {
         char** next = NULL;
-        args = parse_line(fp);
+        initial_args = parse_line(fp, &line_buffer);
+        char** args = initial_args;
         if(args != NULL)
         {
             // possible memory leaks
             get_next_command(args, &next);
             //print_args(args);
-            handle_command(args);
+            
+            if(handle_command(args))
+            {
+                fclose(fp);
+                free(initial_args);
+                free(line_buffer);
+                exit(0);
+            }
             args = next;
             while(next != NULL)
             {
                 //printf("main next: %p\n", next);
                 get_next_command(args, &next);
-                handle_command(args);
+                if(handle_command(args))
+                {
+                    fclose(fp);
+                    free(initial_args);
+                    free(line_buffer);
+                    exit(0);
+                }
                 //args is modified by get next command
                 args = next;
             }
             while(wait(NULL) > 0);
         }
+        free(initial_args);
+        free(line_buffer);
     }
-
-    //free(args);
-
-    return 0;
 }
