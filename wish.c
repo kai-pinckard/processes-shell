@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <stdlib.h>
+//include linux limits
 
 
 // This is a space delimited list of directories.
@@ -156,43 +157,6 @@ char** parse_line(FILE* input_file)
     return args;
 }
 
-
-/*
-    This function is responsible for seeing if an executable exists in the directories
-    specified by path that corresponds to the entered arguments.
-*/
-void search_for_program(char** args)
-{
-    // create a modifiable copy of path
-    int path_len = strlen(path) + 1;
-    char path_cp[path_len];
-    strncpy(path_cp, path, path_len);
-
-
-    char* directory = strtok(path_cp, " ");
-
-    while(directory != NULL)
-    {
-        // concat the directory with args[0]
-        int file_path_length = strlen(directory) + strlen(args[0]) + 1;
-        char file_path[file_path_length];
-        strncpy(file_path, directory, file_path_length);
-        strcat(file_path, args[0]);
-
-        if (access(file_path, X_OK) == 0)
-        {
-            //printf("program found at %s\n", file_path);
-            return;
-        }
-
-        directory = strtok(NULL, " ");
-    }
-    //printf("error no program found.\n");
-    generic_error();
-
-}
-
-
 void handle_path(char** args)
 {
     // set the first byte to \0 so that concats can be used
@@ -224,6 +188,182 @@ void handle_cd(char** args)
         return;
     }
 }
+
+/*
+    This function recieves a list of char** containing all of the
+    args from a single line. It is responsible for returning a new list of
+    char** that contains all of the arguments in a single command. It must
+    also update the pointer next to hold the location in the original args 
+    after the replaced so that & so that on subsequent calls the next 
+    commands can be obtained. ^^
+*/
+char** get_next_command(char** args, char*** next)
+{
+    //possibly need to free somewhere.
+    //printf("called now\n");
+    *next = NULL;
+    for(int i = 0; args[i] != NULL; i++)
+    {
+        //printf("arg %d: %s\n", i, args[i]);
+
+        // if the current arg is an & then replace ampersand with NULL
+        // return pointer to args. 
+        if(strcmp(args[i], "&") == 0)
+        {
+            if(i != 0)
+            {
+                args[i] = NULL;
+            }
+            
+            // if there is another command to parse after &
+            if(args[i+1] != NULL)
+            {
+                //printf("args: %p\n next_cur: %p\nnext_new: %p\n", args, next, args+i+1);
+                *next = args + i + 1;
+            }
+            break;
+        }
+    }
+    return args;
+}
+void handle_external_command(char** args)
+{
+     // create a modifiable copy of path
+    int path_len = strlen(path) + 1;
+    char path_cp[path_len];
+    strncpy(path_cp, path, path_len);
+
+    char* directory = strtok(path_cp, " ");
+    bool found_file = false;
+
+    while(directory != NULL)
+    {
+        // concat the directory with args[0]
+        //printf("direct: %s\n", directory);
+        // +2 1 for termination char and 1 for /
+        int file_path_length = strlen(directory) + strlen(args[0]) + 2;
+        char file_path[file_path_length];
+        strncpy(file_path, directory, file_path_length);
+        strcat(file_path, "/");
+        strcat(file_path, args[0]);
+        //printf("path %s\n", file_path);
+
+        //printf("filepath: %s\n", file_path);
+        if (access(file_path, X_OK) == 0)
+        {
+            // a valid executable has been found
+            // //printf("attempting running program at %s\n", file_path);
+            found_file = true;
+            pid_t child;
+            child = fork();
+
+            /*
+            Need to have a loop to fork all commands before reaching this point.
+            */
+
+            if(child != 0)
+            {
+                // parent returns
+                /* // This is not the child
+                int wstatus = -1;
+                if(waitpid(child, &wstatus, 0) == -1)
+                {
+                    // //printf("waitpid failed.\n");
+                    generic_error();
+                }
+                //printf("wstatus: %d\n", wstatus);
+                //printf("parent here: %d\n", child); */
+                return;
+            }
+            else
+            {
+                //printf("child calling execv\n");
+
+                // check if redirection is present
+                int redirection_file = -1;
+                char* redirect_char_loc = NULL;
+
+                for(int i = 0; args[i] != NULL; i++)
+                {
+                    //printf("%s\n", args[i]);
+                    // this requires a space which is a problem.
+                    // the argument is a >
+                    if(strcmp(args[i], ">") == 0)
+                    {
+                        //printf("attempting redirection occured\n");
+                        if(args[i+1] != NULL && args[i+2] == NULL)
+                        {
+                            //printf("redirection occuring\n");
+                            redirection_file = open(args[i+1], O_CREAT|O_TRUNC|O_WRONLY, 0666);
+                            if (redirection_file < 0)
+                            {
+                                //  perror("unable to open redirection file\n");
+                                generic_error();
+                                return;
+                            }
+                            // remove all args after and including >
+                            set_args_to_null(args, i);
+                        }
+                        else
+                        {
+                            generic_error();
+                            return;
+                        }
+                        break;
+                    }
+                    //The argument contains a >
+                    else if((redirect_char_loc = strchr(args[i], '>')) != NULL)
+                    {
+                        //printf("here");
+                        if(redirect_char_loc[1] != '\0')
+                        {
+                            redirection_file = open((redirect_char_loc+1), O_CREAT|O_TRUNC|O_WRONLY, 0666);
+                            if (redirection_file < 0)
+                            {
+                                //  perror("unable to open redirection file\n");
+                                generic_error();
+                                return;
+                            }
+                            // remove all args after and including >
+                            set_args_to_null(args, i);
+                            // terminate string at redirect char
+                            *redirect_char_loc = '\0';
+                            //printf("%s\n", args[i]);
+                        }
+                        else
+                        {
+                            generic_error();
+                            return;
+                        }
+                    }
+                }
+
+                // configure output and error redirection
+                dup2(redirection_file, 1);
+                dup2(redirection_file, 2);
+
+
+                // need to be able to prepend to 
+                //printf("excv\n");
+                execv(file_path, args);
+                //printf("unexpected return execv error occured.\n");
+                generic_error();
+                exit(1);
+            }
+
+
+        }
+
+        directory = strtok(NULL, " ");
+    }
+    if(!found_file)
+    {
+        generic_error();
+    }
+}
+
+
+
 
 void handle_command(char** args)
 {
@@ -263,165 +403,36 @@ void handle_command(char** args)
         //printf("WIP --- attempting to execute command.\n");
 
         //search_for_program(args);
-
-        // create a modifiable copy of path
-        int path_len = strlen(path) + 1;
-        char path_cp[path_len];
-        strncpy(path_cp, path, path_len);
-
-        char* directory = strtok(path_cp, " ");
-        bool found_file = false;
-
-        while(directory != NULL)
-        {
-            // concat the directory with args[0]
-            //printf("direct: %s\n", directory);
-            // +2 1 for termination char and 1 for /
-            int file_path_length = strlen(directory) + strlen(args[0]) + 2;
-            char file_path[file_path_length];
-            strncpy(file_path, directory, file_path_length);
-            strcat(file_path, "/");
-            strcat(file_path, args[0]);
-            //printf("path %s\n", file_path);
-
-            //printf("filepath: %s\n", file_path);
-            if (access(file_path, X_OK) == 0)
-            {
-                // a valid executable has been found
-               // //printf("attempting running program at %s\n", file_path);
-                found_file = true;
-                pid_t child;
-                child = fork();
-
-                if(child != 0)
-                {
-                    // This is not the child
-                    int wstatus = -1;
-                    if(waitpid(child, &wstatus, 0) == -1)
-                    {
-                       // //printf("waitpid failed.\n");
-                       generic_error();
-                    }
-                    //printf("wstatus: %d\n", wstatus);
-                    //printf("parent here: %d\n", child);
-                    return;
-                }
-                else
-                {
-                    //printf("child calling execv\n");
-
-                    // check if redirection is present
-                    int redirection_file = -1;
-                    char* redirect_char_loc = NULL;
-
-                    for(int i = 0; args[i] != NULL; i++)
-                    {
-                        //printf("%s\n", args[i]);
-                        // this requires a space which is a problem.
-                        // the argument is a >
-                        if(strcmp(args[i], ">") == 0)
-                        {
-                            //printf("attempting redirection occured\n");
-                            if(args[i+1] != NULL && args[i+2] == NULL)
-                            {
-                                //printf("redirection occuring\n");
-                                redirection_file = open(args[i+1], O_CREAT|O_TRUNC|O_WRONLY, 0666);
-                                if (redirection_file < 0)
-                                {
-                                    //  perror("unable to open redirection file\n");
-                                    generic_error();
-                                    return;
-                                }
-                                // remove all args after and including >
-                                set_args_to_null(args, i);
-                            }
-                            else
-                            {
-                                generic_error();
-                                return;
-                            }
-                            break;
-                        }
-                        //The argument contains a >
-                        else if((redirect_char_loc = strchr(args[i], '>')) != NULL)
-                        {
-                            //printf("here");
-                            if(redirect_char_loc[1] != '\0')
-                            {
-                                redirection_file = open((redirect_char_loc+1), O_CREAT|O_TRUNC|O_WRONLY, 0666);
-                                if (redirection_file < 0)
-                                {
-                                    //  perror("unable to open redirection file\n");
-                                    generic_error();
-                                    return;
-                                }
-                                // remove all args after and including >
-                                set_args_to_null(args, i);
-                                // terminate string at redirect char
-                                *redirect_char_loc = '\0';
-                                //printf("%s\n", args[i]);
-                            }
-                            else
-                            {
-                                generic_error();
-                                return;
-                            }
-                        }
-                    }
-
-                    // configure output and error redirection
-                    dup2(redirection_file, 1);
-                    dup2(redirection_file, 2);
-
-
-                    // need to be able to prepend to 
-                    //printf("excv\n");
-                    execv(file_path, args);
-                    //printf("unexpected return execv error occured.\n");
-                    generic_error();
-                    exit(1);
-                }
-
-
-            }
-
-            directory = strtok(NULL, " ");
-        }
-        if(!found_file)
-        {
-            generic_error();
-        }
+        handle_external_command(args);
     }
 }
+
+/*
+Need something like start all commands then wait for commands to finish.
+*/
+
+/* void thinking(args)
+{
+    args = parse_line(1);
+    command_args = get_next_command(args);
+    pid_t children[];
+    while (command_args != NULL)
+    {
+        execute_command();
+    }
+    wait_for_all_commands();
+} */
 
 
 int main(int argc, char* argv[])
 {
     char** args;
-
-    // and start building against the unit tests
-    if(argc < 2)
-    {
-        //printf("less than two args.\n");
-        //printf("interactive mode: \n");
-
-        while(true)
-        {
-            //printf("wish> ");
-            args = parse_line(stdin);
-            if(args != NULL)
-            {
-                //print_args(args);
-                handle_command(args);
-            }
-        }
-
-    }
-    else
+    FILE *fp = fdopen(0, "r");
+    if(argc > 1)
     {
         //printf("more than two args.\n");
         //printf("running from file %s\n", argv[1]);
-        FILE *fp = fopen(argv[1], "r");
+        fp = fopen(argv[1], "r");
         //printf("her3e");
         if(fp == NULL)
         {
@@ -435,16 +446,27 @@ int main(int argc, char* argv[])
             exit(1);
         } 
         rewind(fp);
-
-        while(true)
+    }
+    while(true)
+    {
+        char** next = NULL;
+        args = parse_line(fp);
+        if(args != NULL)
         {
-            //printf("dsfsd\n");
-            args = parse_line(fp);
+            // possible memory leaks
+            get_next_command(args, &next);
             //print_args(args);
-            if(args != NULL)
+            handle_command(args);
+            args = next;
+            while(next != NULL)
             {
+                //printf("main next: %p\n", next);
+                get_next_command(args, &next);
                 handle_command(args);
+                //args is modified by get next command
+                args = next;
             }
+            while(wait(NULL) > 0);
         }
     }
 
