@@ -1,3 +1,8 @@
+/*
+    Project 1: simple shell
+    Completed by: Kai Pinckard
+*/
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
