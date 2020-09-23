@@ -344,6 +344,7 @@ int main(int argc, char* argv[])
         {
             get_next_command(args, &next);
 
+            // handle_command returns true when main should exit
             if(handle_command(args))
             {
                 fclose(fp);
